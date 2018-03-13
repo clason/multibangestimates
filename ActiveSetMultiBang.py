@@ -6,6 +6,7 @@ by
  Christian Clason <christian.clason@uni-due.de>
  Thi Bich Tram Do <tram.do@uni-due.de>
  Frank Poerner <frank.poerner@mathematik.uni-wuerzburg.de>
+see http://arxiv.org/abs/1803.04298
 """
 
 __author__ = "Frank Poerner <frank.poerner@mathematik.uni-wuerzburg.de>"
