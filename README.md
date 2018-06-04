@@ -1,4 +1,4 @@
-multibangestimates
+# multibangestimates
 
 This repository contains Python scripts accompanying the paper [Error estimates for the approximation of a discrete-valued optimal control problem](https://arxiv.org/abs/1803.04298) by Christian Clason, Thi Bich Tram Do, and Frank Pörner.
 
