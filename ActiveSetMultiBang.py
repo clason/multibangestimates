@@ -1,35 +1,28 @@
 """
 This module implements the active set method used in the paper
- 'Error estimates for the approximation of a discrete-valued optimal 
+ 'Error estimates for the approximation of multibang control problems
   control problem'
 by
  Christian Clason <christian.clason@uni-due.de>
  Thi Bich Tram Do <tram.do@uni-due.de>
  Frank Poerner <frank.poerner@mathematik.uni-wuerzburg.de>
-see http://arxiv.org/abs/1803.04298
+see https://arxiv.org/abs/1803.04298
 """
 
 __author__ = "Frank Poerner <frank.poerner@mathematik.uni-wuerzburg.de>"
-__date__ = "March 12, 2018"
+__date__ = "July 10, 2018"
 
-from fenics import *
-from dolfin import *
+from dolfin import *  # tested with FEniCS 2017.2
+import mshr
 import sys,os
 import scipy
 import scipy.sparse as sp
-import scipy.sparse.linalg as spla
-from scipy.sparse.linalg import *
-from scipy.sparse.linalg import cgs
 from scipy.sparse.linalg import spsolve
 import numpy as np
-import ufl
-import mshr
-import copy
 
-# Example
-# 1 = One-dimensional example 
-# 2 = Two-dimensional example
-example = 1
+# Choose example 
+example = 1 # kappa = 1
+#example = 2 # kappa < 1
 
 # Set linear algebra backend
 parameters['linear_algebra_backend']='Eigen'
@@ -41,48 +34,39 @@ def assemble_scipy(a,bcs):
     row,col,val = as_backend_type(aa).data()
     return sp.csr_matrix((val,col,row))
 
-#set_log_level(30)
 set_log_active(False)
 
 # Number of outer iterations
-maxiter = 10
+maxiter = 20
 
 # Number of maximal iterations for the active set method
 max_inner_iter = 5
-
 
 # Regularization parameter for the multi-bang regularization
 alpha = 2.0
 
 # The exact solution for the control is a discontinuous function, hence the errornorm function is not suited for computing
 # the L^2 error. We compute the solution on a finer grid using a quadrature rule
-Nfine = 1500
-if (example==1):
-    mesh_fine = UnitIntervalMesh(10000000)
-if (example==2):
-    domain_fine = mshr.Circle( Point(0.,0.), 1.0 )
-    mesh_fine = mshr.generate_mesh(domain_fine, Nfine, "cgal")   
+Nfine = 20000000
+Ngrid = [10000,100000,1000000]
+
+mesh_fine = UnitIntervalMesh(Nfine) 
 V_fine    = FunctionSpace(mesh_fine,'CG',1)
 
 # Compute the solution on different meshes
-for N in [75,250,750]:
+for N in Ngrid:
 
-# Construction of Function space
-    if (example==1):
-        mesh = UnitIntervalMesh(N)
-    if (example==2):
-        domain = mshr.Circle( Point(0.,0.), 1.0 )
-        mesh = mshr.generate_mesh(domain, N, "cgal")
-        
+    # Construction of Function space
+    mesh = UnitIntervalMesh(N)
     V  = FunctionSpace(mesh,'CG',1)
     n  = V.dim()
     bc = DirichletBC(V, 0.0, "on_boundary")
 
-    print("N: %d" % N)
-    print("N_h (grid): %d" % n)
-    print("N_h (fine grid): %d" % V_fine.dim())
+    print(("N: %d" % N))
+    print(("N_h (grid): %d" % n))
+    print(("N_h (fine grid): %d" % V_fine.dim()))
 
-    print "starting computation:"
+    print("starting computation:")
 
     # Arrays to store the computed errors
     err_gamma = []
@@ -117,7 +101,6 @@ for N in [75,250,750]:
     u4 = 1.0
     u5 = 2.0
 
-    # One dimensional example
     if (example==1):
         # initialize optimal control
         expression_uopt ='''
@@ -243,57 +226,54 @@ for N in [75,250,750]:
         yopt = interpolate(Expression('sin(2*pi*x[0])', degree=1),V)
         laplaceyopt = interpolate(Expression('-4*pi*pi*sin(2*pi*x[0])', degree=1),V)
 
-
-    # Two-dimensional example
     if (example==2):
-        
         # initialize optimal control
         expression_uopt ='''
         class my_expression : public Expression
         {
         public:
+
         void eval(Array<double>& values, const Array<double>& x) const
         {
-            double r = sqrt( pow(x[0],2) + pow(x[1],2) );
-            if (r < 2.0/27.0)
+            if (x[0] < 2.0/27.0)
             {
             values[0] = 0.0;
             }
-            else if (r < 2.0/9.0)
+            else if (x[0] < 2.0/9.0)
             {
             values[0] = 1.0;
             }
-            else if (r < 3.0/9.0)
+            else if (x[0] < 3.0/9.0)
             {
             values[0] = 2.0;
             }
-            else if (r < 4.0/9.0)
+            else if (x[0] < 4.0/9.0)
             {
             values[0] = 1.0;
             }
-            else if (r < 5.0/9.0)
+            else if (x[0] < 5.0/9.0)
             {
             values[0] = 0.0;
             }
-            else if (r < 6.0/9.0)
+            else if (x[0] < 6.0/9.0)
             {
             values[0] = -1.0;
             }
-            else if (r < 7.0/9.0)
+            else if (x[0] < 7.0/9.0)
             {
             values[0] = -2.0;
             }
-            else if (r < 25.0/27.0)
+            else if (x[0] < 25.0/27.0)
             {
             values[0] = -1.0;
             }
-            else if (r <= 1.0)
+            else if (x[0] <= 1.0)
             {
             values[0] = 0.0;
             }
             else
             {
-            values[0] = 0;
+            values[0] = 0.0;
             }
         }
         };
@@ -308,42 +288,56 @@ for N in [75,250,750]:
         public:
         void eval(Array<double>& values, const Array<double>& x) const
         {
-           double r = sqrt( pow(x[0],2) + pow(x[1],2) );
-           if (r < 2.0/27.0)
-           {
-           values[0] = (59049.0*r*r*r)/4.0 - (531441.0*r*r*r*r)/2.0 + (43046721*r*r*r*r*r)/32.0;
-           }
-           else if (r < 2.0/9.0)
-           {
-           values[0] = 27.0/2.0*r;
-           }
-           else if (r < 3.0/9.0)
-           {
-           values[0] = -72.0 + 3123.0/2.0*r - 13122.0*pow(r,2) + 54675.0*pow(r,3) - 111537.0*pow(r,4) + 177147.0/2.0*pow(r,5);
-           }
-           else if (r < 6.0/9.0)
-           {
-           values[0] = 9.0 - 18.0*r;
-           }
-           else if (r < 7.0/9.0)
-           {
-           values[0] = -20079.0 + 136062.0*r - 367416.0*pow(r,2) + 494262.0*pow(r,3) - 662661.0/2.0*pow(r,4) + 177147.0/2.0*pow(r,5);
-           }
-           else if (r < 1)
-           {
-           values[0] = -27.0/2.0 + 27.0/2.0*r;
-           }
-           else
-           {
-           values[0] = 0;
-           }
+            if (x[0] < 3.0/27.0) 
+             {
+             values[0] = 27.0/2.0*x[0];
+             }
+             else if (x[0] < 2.0/9.0)
+             {
+             values[0] = 266085.0*pow(x[0],5) - 433593.0/2.0*pow(x[0],4) + 135765.0/2.0*pow(x[0],3) - 20437.0/2.0*pow(x[0],2) +  6812.0/9.0*x[0] - 1703.0/81.0;
+             }
+             else if (x[0] < 5.0/18.0)
+             {
+             values[0] =  11334492.0*pow(x[0],5) - 14168034.0*pow(x[0],4) + 7054821.0*pow(x[0],3) - 3498235.0/2.0*pow(x[0],2) +  1943450.0/9.0*x[0] - 860051.0/81.0;
+             }
+             else if (x[0] < 3.0/9.0)
+             {
+             values[0] = -11334492.0*pow(x[0],5) + 17316666.0*pow(x[0],4) - 10553301.0*pow(x[0],3) + 6413635.0/2.0*pow(x[0],2) - 1457650.0/3.0*x[0] + 528697.0/18.0;
+             }
+             else if (x[0] < 4.0/9.0)
+             {
+             values[0] = -(709317.0/2.0)*pow(x[0],5) + 696195.0*pow(x[0],4) - 1085913.0/2.0*pow(x[0],3) + 210182.0*pow(x[0],2) -  121150.0/3.0*x[0] + 27761.0/9.0;
+             }
+             else if (x[0] < 5.0/9.0)
+             {
+             values[0] = 9.0 - 18.0*x[0];
+             }
+             else if (x[0] < 6.0/9.0)
+             {
+             values[0] = -(707859.0/2.0)*pow(x[0],5) + 2149821.0/2.0*pow(x[0],4) - 2604285.0/2.0*pow(x[0],3) + 1573075.0/2.0*pow(x[0],2) -  710804.0/3.0*x[0] + 256331.0/9.0;
+             }
+             else if (x[0] < 13.0/18.0)
+             {
+             values[0] = -11340324.0*pow(x[0],5) + 39376206.0*pow(x[0],4) - 54660123.0*pow(x[0],3) + 75835981.0/2.0*pow(x[0],2) -  39434798.0/3.0*x[0] + 16396175.0/9.0;
+             }
+             else if (x[0] < 7.0/9.0)
+             {
+             values[0] = 11340324.0*pow(x[0],5) - 42526134.0*pow(x[0],4) + 63759915.0*pow(x[0],3) - 95552197.0/2.0*pow(x[0],2) +  161022862.0/9.0*x[0] - 433967467.0/162.0;
+             }
+             else if (x[0] < 8.0/9.0)
+             {
+             values[0] = 265356.0*pow(x[0],5) - 2221101.0/2.0*pow(x[0],4) + 3712707.0/2.0*pow(x[0],3) - 1549124.0*pow(x[0],2) +  11616563.0/18.0*x[0] - 17395339.0/162.0;
+             }
+             else
+             {
+             values[0] = -27.0/2.0 + 27.0/2.0*x[0];
+             }
         }
         };
         '''
-        
         popt_expr = Expression(expression_popt, degree=1)
         popt = interpolate(popt_expr,V)
-
+        
         # initialize laplace of optimal adjoint state
         expression_laplacepopt ='''
         class my_expression : public Expression
@@ -351,34 +345,49 @@ for N in [75,250,750]:
         public:
         void eval(Array<double>& values, const Array<double>& x) const
         {
-            double r = sqrt( pow(x[0],2) + pow(x[1],2) );
-            if (r < 2.0/27.0)
+            if (x[0] < 3.0/27.0)
             {
-            values[0] = 531441.0/32.0*r*(8.0 + 2025.0*r*r - 256.0*r);
+            values[0] = 0.0;
             }
-            else if (r < 2.0/9.0)
+            else if (x[0] < 2.0/9.0)
             {
-            values[0] = 27.0/(2.0*r);
+            values[0] = -20437.0 + 407295.0*x[0] - 2601558.0*pow(x[0],2) + 5321700.0*pow(x[0],3);
             }
-            else if (r < 3.0/9.0)
+            else if (x[0] < 5.0/18.0)
             {
-            values[0] = 9.0/2.0*(-11664.0 + 347.0/r + 109350.0*r +  729.0*r*r*(-544.0 + 675.0*r));
+            values[0] = -3498235.0 + 42328926.0*x[0] - 170016408.0*pow(x[0],2) + 226689840.0*pow(x[0],3);
             }
-            else if (r < 6.0/9.0)
+            else if (x[0] < 3.0/9.0)
             {
-            values[0] = -18.0/r;
+            values[0] = 6413635.0 - 63319806.0*x[0] + 207799992.0*pow(x[0],2) - 226689840.0*pow(x[0],3);
             }
-            else if (r < 7.0/9.0)
+            else if (x[0] < 4.0/9.0)
             {
-            values[0] = 9.0/2.0*(-326592.0 + 30236.0/r + 988524.0*r +   729.0*r*r*(-1616.0 + 675.0*r));
+            values[0] = 420364.0 - 3257739.0*x[0] + 8354340.0*pow(x[0],2) - 7093170.0*pow(x[0],3);
             }
-            else if (r < 1)
+            else if (x[0] < 5.0/9.0)
             {
-            values[0] = 27.0/(2.0*r);
+            values[0] = 0.0;
+            }
+            else if (x[0] < 6.0/9.0)
+            {
+            values[0] = 1573075.0 - 7812855.0*x[0] + 12898926.0*pow(x[0],2) - 7078590.0*pow(x[0],3);
+            }
+            else if (x[0] < 13.0/18.0)
+            {
+            values[0] = 75835981.0 - 327960738.0*x[0] + 472514472.0*pow(x[0],2) - 226806480.0*pow(x[0],3);
+            }
+            else if (x[0] < 7.0/9.0)
+            {
+            values[0] = -95552197.0 + 382559490.0*x[0] - 510313608.0*pow(x[0],2) + 226806480.0*pow(x[0],3);
+            }
+            else if (x[0] < 8.0/9.0)
+            {
+            values[0] = -3098248.0 + 11138121.0*x[0] - 13326606.0*pow(x[0],2) + 5307120.0*pow(x[0],3);
             }
             else
             {
-            values[0] = 0;
+            values[0] = 0.0; 
             }
         }
         };
@@ -387,8 +396,9 @@ for N in [75,250,750]:
         laplacepopt = interpolate(laplacepopt_expr,V)
         
         # initialize optimal state and its laplacian
-        yopt = interpolate(Expression('sin(2*pi*(x[0]*x[0]  + x[1]*x[1]))', degree=1),V)
-        laplaceyopt = interpolate(Expression('8*pi*( cos(2*pi*(x[0]*x[0]  +  x[1]*x[1])) - 2*pi*(x[0]*x[0]  + x[1]*x[1])*sin(2*pi*(x[0]*x[0]  +  x[1]*x[1]))    )', degree=1),V)
+        yopt = interpolate(Expression('sin(2*pi*x[0])', degree=1),V)
+        laplaceyopt = interpolate(Expression('-4*pi*pi*sin(2*pi*x[0])', degree=1),V)
+
         
     # construct e_omega
     eom = Function(V);
@@ -424,7 +434,7 @@ for N in [75,250,750]:
     iteration = 1
     gamma = 1.0
     while (iteration <= maxiter):
-        print('Computing solution with gamma=%1.3e' % (gamma))
+        print(('Computing solution with gamma=%1.3e' % (gamma)))
         difference = 1
         inner_iter = 0
         
@@ -531,7 +541,7 @@ for N in [75,250,750]:
             temp.vector()[  (  alpha/2*( ga*u4 + u5 ) <= p.vector() ) & (  p.vector() <= alpha/2*(u4 + ga*u5)   )   ] = 1.0
             difference = difference + sum(np.absolute(temp.vector()-Q4_5.vector()))
 
-            print("change in active sets: %d" % difference)
+            print(("change in active sets: %d" % difference))
             inner_iter = inner_iter+1
 
 
@@ -547,6 +557,9 @@ for N in [75,250,750]:
         # increase iteration number and decrease gamma
         gamma = gamma/2.0
         iteration = iteration +1
+        
+        plot(u)
+        plot(p)
 
         
     # Save the computed result on the finest grid
@@ -558,14 +571,13 @@ for N in [75,250,750]:
     file_state << y
     file_adjoint << p
         
-        
     # print the L^2 error
     print("L^2 error:")
     for k in range(0,len(err_gamma)):
-        print "(", err_gamma[k], ",", err_reg[k], ")"
+        print("(", err_gamma[k], ",", err_reg[k], ")")
         
     # compute and print the numerical rate of convergence
     print("numerical convergence rate:")
     for k in range(1,len(err_gamma)):
-        print np.log(err_reg[k-1]/err_reg[k])/np.log(2)
+        print(np.log(err_reg[k-1]/err_reg[k])/np.log(2))
         
